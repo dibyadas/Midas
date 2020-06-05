@@ -7,6 +7,8 @@ import os
 notified = False
 touchpad_path = '/dev/input/event6'
 
+#width = 2940 = x
+#height = 1260 = y
 
 async def x_movement(device_path):
     dev = evdev.InputDevice(device_path)
