@@ -36,11 +36,11 @@ async def y_movement():
 
 
 async def from_streams():  # Merge multiple async streams
-    async_zip_iterator = aiostream.stream.zip(y_movement(), x_movement())
+    async_zip_iterator = aiostream.stream.ziplatest(y_movement(), x_movement())
     async with async_zip_iterator.stream() as merged:
         count = 0
         async for event in merged:
-            if count == 5:  # yield every 5 iterates for better performance
+            if count == 5:	  # yield every 5 iterates for better performance
                 yield event
                 count = 0
             else:
@@ -53,14 +53,12 @@ async def pad():
     stdscr.refresh()
     async for coord in from_streams():
         pp = convert(coord)
-        if pp[0] <= 0 or pp[1] <= 0:
-            await asyncio.sleep(0.0005)
-            continue
-        stdscr.clear()
-        rectangle(stdscr, 0, 0, 20, 80)
-        rectangle(stdscr, pp[0]-1, pp[1]-1, pp[0]+1, pp[1]+1)
-        stdscr.refresh()
-        await asyncio.sleep(0.0005)
+        if not (pp[0] <= 0 or pp[1] <= 0):
+            stdscr.clear()
+            rectangle(stdscr, 0, 0, 20, 80)
+            rectangle(stdscr, pp[0]-1, pp[1]-1, pp[0]+1, pp[1]+1)
+            stdscr.refresh()
+        await asyncio.sleep(0.005)
 
 
 loop = asyncio.get_event_loop()
