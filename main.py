@@ -3,22 +3,14 @@ from evdev import ecodes, UInput
 import time
 import asyncio
 import os
+import aiostream
+import moosegesture
 
 notified = False
 touchpad_path = '/dev/input/event6'
 
-#width = 2940 = x
-#height = 1260 = y
-
-async def x_movement(device_path):
-    dev = evdev.InputDevice(device_path)
-    while True:
-        try:
-            for event in dev.read():
-                if event.type == ecodes.EV_ABS and event.code == 0:
-                    print(event)
-        except BlockingIOError:
-            await asyncio.sleep(0.005)
+# width = 2940 = x
+# height = 1260 = y
 
 
 async def detect_key_hold(device_path, hold_time_sec=1):
@@ -111,30 +103,119 @@ async def detect_key_tap(device_path, hold_time_sec=0.1):
         continue
 
 
+# async def x_movement(device_path):
+#     dev = evdev.InputDevice(device_path)
+#     while True:
+#         try:
+#             for event in dev.read():
+#                 if event.type == ecodes.EV_ABS and event.code == 0:
+#                     # print(event)
+#                     yield event
+#         except BlockingIOError:
+#             await asyncio.sleep(0.005)
+
+
+# async def y_movement(device_path):
+#     dev = evdev.InputDevice(device_path)
+#     while True:
+#         try:
+#             for event in dev.read():
+#                 if event.type == ecodes.EV_ABS and event.code == 1:
+#                     # print(event)
+#                     yield event
+#         except BlockingIOError:
+#             await asyncio.sleep(0.005)
+
+
+async def x_movement(device_path):
+    dev = evdev.InputDevice(device_path)
+    async for event in dev.async_read_loop():
+        if event.type == ecodes.EV_ABS and event.code == 0:
+            yield event
+
+
 async def y_movement(device_path):
     dev = evdev.InputDevice(device_path)
-    while True:
+    async for event in dev.async_read_loop():
+        if event.type == ecodes.EV_ABS and event.code == 1:
+            yield event
+
+
+async def tap_detector(device_path):
+    dev = evdev.InputDevice(device_path)
+    async for event in dev.async_read_loop():
+        if event.type == ecodes.EV_KEY and event.code == 330:
+            yield event
+
+def sanitize(coord_set):
+    # print(coord_set)
+    timestamp_vals = {}
+    for _, x_event in coord_set:
+        # print(x_event.timestamp())
+        timestamp_vals[f'{x_event.timestamp()}'] = [x_event.value]
+    for y_event, _ in coord_set:
         try:
-            for event in device2.read():
-                if event.type == ecodes.EV_ABS and event.code == 1:
-                    print(event)
-        except BlockingIOError:
-            await asyncio.sleep(0.005)
+            timestamp_vals[f'{y_event.timestamp()}'].append(y_event.value)
+        except KeyError:
+            pass
+
+    sanitized_tuple_list = []
+    # print(timestamp_vals)
+    for item in timestamp_vals.values():
+        if len(item) == 2:
+            sanitized_tuple_list.append(tuple(item))
+    print(sanitized_tuple_list)
+    detected_gesture = moosegesture.getGesture(sanitized_tuple_list)
+    print(f'Gesture is :- {detected_gesture}')
+    gesture_map = { ('DR','UR','DR','UR') : 'W', ('UR','DR','UR','DR') : 'M', ('D', 'R') : 'L', ('D','L') : 'Inverted L'}
+    closest_match = moosegesture.findClosestMatchingGesture(detected_gesture, gesture_map.keys())
+    # print(gesture_map[closest_match[0]])
+    os.system(f'notify-send "Gesture Detected :- {gesture_map[closest_match[0]]}"')
+    # (lambda x: (x[0].value, x[1].value))
 
 
-async def main():
+async def from_streams():  # Merge multiple async streams
+    async_zip_x_y = aiostream.stream.zip(y_movement(touchpad_path),
+                                         x_movement(touchpad_path))
+    async_merge_tap_detect = aiostream.stream.merge(
+        async_zip_x_y, tap_detector(touchpad_path))
+    coord_set = []
+    flag = True
+    async with async_merge_tap_detect.stream() as merged:
+        async for event in merged:
+            if not isinstance(event, tuple):
+                if event.value == 0:
+                    sanitize(coord_set)
+                    coord_set = []
+                # if event.type == ecodes.EV_KEY and event.code == 330:
+                    # print(event)
+            else:
+                coord_set.append(event)
+                # print(event)
+
+# for event in merged:
+#     if event.type == EV_KEY and event.code == 330:
+#         if event.value == 1:
+
+
+# async def main():
         # async for event in x_movement():
         #     print(event)
         # t1 = asyncio.create_task(x_movement())
-    t1 = asyncio.create_task(detect_key_hold('/dev/input/event6'))
     # t2 = asyncio.create_task(y_movement())
-    t2 = asyncio.create_task(detect_key_tap('/dev/input/event6'))
-    await asyncio.wait([t1, t2])
+    # t1 = asyncio.create_task(detect_key_hold(touchpad_path))
+    # t2 = asyncio.create_task(detect_key_tap(touchpad_path))
+    # t3 = asyncio.create_task(from_streams())
+    # await asyncio.wait([t3, t2, t1])
+
     # await t1
     # await t2
+    # await t3
+tasks = asyncio.gather(detect_key_hold(touchpad_path),
+                       detect_key_tap(touchpad_path), from_streams())
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(main())
+loop.run_until_complete(tasks)
 loop.close()
 
 # ui = UInput()
@@ -155,19 +236,5 @@ loop.close()
 # for event in device1.read_loop():
 #     print(event)
 
-# async def x_movement():
-#   async for event in device1.async_read_loop():
-#       if event.type == ecodes.EV_ABS and event.code == 0:
-#           yield event
-
-# async def y_movement():
-#   async for event in device2.async_read_loop():
-#       if event.type == ecodes.EV_ABS and event.code == 1:
-#           yield event
-
-# async def from_streams(): # Merge multiple async streams
-#   async with aiostream.stream.merge(x_movement(), y_movement()).stream() as merged:
-#       async for event in merged:
-#           print(event)
 
 # asyncio.run(from_streams())
