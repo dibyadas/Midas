@@ -12,11 +12,11 @@ touchpad_path = '/dev/input/event6'
 # width = 2940 = x
 # height = 1260 = y
 
-
-async def detect_key_hold(device_path, hold_time_sec=1):
+async def detect_key_hold(device_path, hold_time_sec=0.5):
     # Assume trig_x and trig_y are True
     # and become false when it's tapped anywhere else
     dev = evdev.InputDevice(device_path)
+    gesture_task = None
     trig_x = True
     trig_y = True
     area_x = 2850
@@ -54,7 +54,18 @@ async def detect_key_hold(device_path, hold_time_sec=1):
                 trig_y = trig_x = True
                 # yield event
                 print(f"Triggered! Event :- {event}")
-        continue
+                if gesture_task is None:
+                    gesture_task = asyncio.create_task(from_streams())
+                else:
+                    gesture_task.cancel()
+                    gesture_task = None
+
+
+def handle_exception(loop, context):
+    pass  # This gets called when from_streams() task is cancelled
+          # because the Futures are trying to write but the coroutine
+          # is no longer running but it doesn't really matter so
+          # we just silently ignore it
 
 
 async def detect_key_tap(device_path, hold_time_sec=0.1):
@@ -147,51 +158,80 @@ async def tap_detector(device_path):
         if event.type == ecodes.EV_KEY and event.code == 330:
             yield event
 
+
 def sanitize(coord_set):
     # print(coord_set)
     timestamp_vals = {}
     for _, x_event in coord_set:
         # print(x_event.timestamp())
-        timestamp_vals[f'{x_event.timestamp()}'] = [x_event.value]
+        if x_event is not None:
+            timestamp_vals[f'{x_event.timestamp()}'] = [x_event.value]
+            # raise e from None
     for y_event, _ in coord_set:
         try:
-            timestamp_vals[f'{y_event.timestamp()}'].append(y_event.value)
+            if y_event is not None:
+                try:
+                    timestamp_vals[f'{y_event.timestamp()}'][1] = y_event.value
+                except IndexError as e:
+                    # raise e from None
+                    timestamp_vals[f'{y_event.timestamp()}'].append(y_event.value)
         except KeyError:
             pass
 
     sanitized_tuple_list = []
-    # print(timestamp_vals)
+    # print(timestamp_vals) 
     for item in timestamp_vals.values():
         if len(item) == 2:
+            # continue
             sanitized_tuple_list.append(tuple(item))
-    print(sanitized_tuple_list)
+    # print(sanitized_tuple_list)
     detected_gesture = moosegesture.getGesture(sanitized_tuple_list)
     print(f'Gesture is :- {detected_gesture}')
-    gesture_map = { ('DR','UR','DR','UR') : 'W', ('UR','DR','UR','DR') : 'M', ('D', 'R') : 'L', ('D','L') : 'Inverted L'}
-    closest_match = moosegesture.findClosestMatchingGesture(detected_gesture, gesture_map.keys())
+    gesture_map = {('DR', 'UR', 'DR', 'UR'): 'W', 
+                   ('UR', 'DR', 'UR', 'DR'): 'M',
+                   ('D',): 'I',
+                   ('DR','UR'): 'V',
+                   ('UR','DR'): 'Inverted V',
+                   ('L', 'DL', 'D', 'DR', 'R'): 'C',
+                   ('D', 'R'): 'L',
+                   ('UR', 'D', 'UR'): 'Thunder',
+                   ('D', 'L'): 'Mirror L'}
+    closest_match = moosegesture.findClosestMatchingGesture(
+        detected_gesture, gesture_map.keys(), maxDifference=4)
     # print(gesture_map[closest_match[0]])
-    os.system(f'notify-send "Gesture Detected :- {gesture_map[closest_match[0]]}"')
+    if closest_match is not None:
+        os.system(f'notify-send "Gesture Detected :- {gesture_map[closest_match[0]]}"')
+    else:
+        print("No gesture detected")
     # (lambda x: (x[0].value, x[1].value))
 
 
 async def from_streams():  # Merge multiple async streams
-    async_zip_x_y = aiostream.stream.zip(y_movement(touchpad_path),
-                                         x_movement(touchpad_path))
-    async_merge_tap_detect = aiostream.stream.merge(
-        async_zip_x_y, tap_detector(touchpad_path))
-    coord_set = []
-    flag = True
-    async with async_merge_tap_detect.stream() as merged:
-        async for event in merged:
-            if not isinstance(event, tuple):
-                if event.value == 0:
-                    sanitize(coord_set)
-                    coord_set = []
-                # if event.type == ecodes.EV_KEY and event.code == 330:
-                    # print(event)
-            else:
-                coord_set.append(event)
+    try:
+        async_zip_x_y = aiostream.stream.ziplatest(y_movement(touchpad_path),
+                                                   x_movement(touchpad_path))
+        async_merge_tap_detect = aiostream.stream.merge(
+            async_zip_x_y, tap_detector(touchpad_path))
+        coord_set = []
+        flag = True
+        async with async_merge_tap_detect.stream() as merged:
+            async for event in merged:
                 # print(event)
+                if not isinstance(event, tuple):
+                    if event.value == 0:
+                        sanitize(coord_set)
+                        coord_set = []
+                    # if event.type == ecodes.EV_KEY and event.code == 330:
+                        # print(event)
+                else:
+                    # coord_set.append(event)
+                    if event is None:
+                        print(time.time())
+                    else:
+                        coord_set.append(event)
+                    # print(event)
+    except Exception as e:
+        print(e)
 
 # for event in merged:
 #     if event.type == EV_KEY and event.code == 330:
@@ -212,11 +252,14 @@ async def from_streams():  # Merge multiple async streams
     # await t2
     # await t3
 tasks = asyncio.gather(detect_key_hold(touchpad_path),
-                       detect_key_tap(touchpad_path), from_streams())
+                       detect_key_tap(touchpad_path))
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(tasks)
-loop.close()
+loop.set_exception_handler(handle_exception)
+try:
+    loop.run_until_complete(tasks)
+except KeyboardInterrupt:    
+    loop.close()
 
 # ui = UInput()
 # for event in detect_number_press():
@@ -238,3 +281,4 @@ loop.close()
 
 
 # asyncio.run(from_streams())
+# ams())
