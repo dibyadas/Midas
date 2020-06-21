@@ -10,6 +10,7 @@ touchpad_path = '/dev/input/event5'
 # width = 2940 = x
 # height = 1260 = y
 
+
 def handle_exception(loop, context):
     # msg = context.get("exception", context["message"])
     # print(msg)

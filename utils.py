@@ -17,33 +17,21 @@ def execute_command(gesture):
     # print(f"{command_map[gesture_map[str(closest_match[0])]]['command']} &")
     # os.system('echo V &')
 
-
-def sanitize_and_notify(coord_set):
-    timestamp_vals = {}
-    for _, x_event in coord_set:
-        if x_event is not None:
-            timestamp_vals[f'{x_event.timestamp()}'] = [x_event.value]
-    for y_event, _ in coord_set:
-        try:
-            if y_event is not None:
-                try:
-                    timestamp_vals[f'{y_event.timestamp()}'][1] = y_event.value
-                except IndexError:
-                    timestamp_vals[f'{y_event.timestamp()}'].append(y_event.value)
-        except KeyError:
-            pass
-
+def sanitize_and_notify(timestamp_vals):
     sanitized_tuple_list = []
+    count = 0
     for item in timestamp_vals.values():
-        if len(item) == 2:
+        count += 1
+        if len(item) == 2 and count == 2:
             sanitized_tuple_list.append(tuple(item))
+            count = 0
 
     # print(sanitized_tuple_list)
     trim_beginning_len = 0.1*len(sanitized_tuple_list)
     # print(trim_beginning_len)
     # print(sanitized_tuple_list[int(trim_beginning_len):])
     detected_gesture = moosegesture.getGesture(sanitized_tuple_list[int(trim_beginning_len):])
-    # print(f'Gesture is :- {detected_gesture}')
+    print(f'Gesture is :- {detected_gesture}')
     closest_match = moosegesture.findClosestMatchingGesture(
         detected_gesture, tuple_gesture_keys, maxDifference=4)
     # print(gesture_map[closest_match[0]])

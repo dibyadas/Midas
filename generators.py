@@ -13,6 +13,7 @@ async def detect_key_hold(device_path, hold_time_sec=0.1):
     # Assume trig_x and trig_y are True
     # and become false when it's tapped anywhere else
     dev = evdev.InputDevice(device_path)
+    # dev2.register(dev)
     gesture_task = None
     trig_x = True
     trig_y = True
@@ -51,73 +52,75 @@ async def detect_key_hold(device_path, hold_time_sec=0.1):
                 trig_y = trig_x = True
                 # yield event
                 # print(f"Triggered! Event :- {event}")
-                if gesture_task is None:
-                    os.system(f'notify-send "Tracking gestures...."')
-                    gesture_task = asyncio.create_task(from_streams(device_path))
-                else:
-                    gesture_task.cancel()
-                    gesture_task = None
-                    os.system(f'notify-send "Gesture tracking stopped"')
+                # if gesture_task is None:
+                os.system(f'notify-send "Tracking gestures..."')
+                await asyncio.create_task(from_streams(device_path))
+                os.system(f'notify-send "Gesture tracking stopped"')
+                # else:           
+                #     gesture_task.cancel()
+                #     gesture_task = None
 
-async def confirmation_tap(touchpad_path):
-    timeout_stream = aiostream.stream.timeout(tap_detector(touchpad_path), 1)
+async def confirmation_tap(dev):
+    timeout_stream = aiostream.stream.timeout(dev.async_read_loop(), 1)
     async with timeout_stream.stream() as timed:
         try:
             async for event in timed:
-                print('confirmed.. executing')
-                return True
+                if event.type == ecodes.EV_KEY and event.code == 330:
+                    print('confirmed.. executing')
+                    return True, event 
         except TimeoutError:
             print("no confimation received... refreshing..")
-            return False
+            return False, None
 
 
 async def from_streams(touchpad_path):  # Merge multiple async streams
     await asyncio.sleep(0.5)
-    count = 2
+    dev = evdev.InputDevice(touchpad_path)
+    dev.grab()
     try:
-        async_zip_x_y = aiostream.stream.ziplatest(y_movement(touchpad_path),
-                                                   x_movement(touchpad_path))
-        async_merge_tap_detect = aiostream.stream.merge(
-            async_zip_x_y, tap_detector(touchpad_path))
         coord_set = []
-        flag = True
+        flag = False
         start_time = 0
         end_time = 0
-        async with async_merge_tap_detect.stream() as merged:
-            async for event in merged:
+        # async with async_merge_tap_detect.stream() as merged:
+        timestamp_vals = {}
+        async for event in dev.async_read_loop():
+            if event.type == ecodes.EV_ABS and event.code == 0:
+                try:
+                    timestamp_vals[f'{event.timestamp()}']
+                    timestamp_vals[f'{event.timestamp()}'][0] = event.value
+                except KeyError:
+                    timestamp_vals[f'{event.timestamp()}'] = [event.value, 0]
+            elif event.type == ecodes.EV_ABS and event.code == 1:
+                try:
+                    timestamp_vals[f'{event.timestamp()}']
+                    timestamp_vals[f'{event.timestamp()}'][1] = event.value
+                except KeyError:
+                    timestamp_vals[f'{event.timestamp()}'] = [0, event.value]
+            elif event.type == ecodes.EV_KEY and event.code == 330:
                 # print(event)
-                if not isinstance(event, tuple):
-                    if event.value == 1:
+                if event.value == 1:
+                    start_time = event.timestamp()
+                elif event.value == 0:
+                    end_time = event.timestamp()
+                    # print(end_time, start_time, end_time - start_time)
+                    if (end_time - start_time) < 0.3:
+                        timestamp_vals = {}
+                        continue
+                    detected_gesture = sanitize_and_notify(timestamp_vals)
+                    # flagger_time = end_time
+                    tapped, event = await confirmation_tap(dev)
+                    if tapped:
+                        print('exec gesture')
                         start_time = event.timestamp()
-                    elif event.value == 0:
-                        end_time = event.timestamp()
-                        if (end_time - start_time) < 0.3:
-                            # print('yahan par')
-                            coord_set = []
-                            continue
-                        detected_gesture = sanitize_and_notify(coord_set)
-                        # print(f'Detected gesture :- {detected_gesture}')
-                        coord_set = []
-                        tapped = await confirmation_tap(touchpad_path)
-                        if tapped:
-                            # print('executing gesture')
-                            execute_command(detected_gesture)
-                        else:
-                            os.system("notify-send 'Clearing gestures...'")
-                            # print('cleared gesture')
-                    # if event.type == ecodes.EV_KEY and event.code == 330:
-                        # print(event)
-                else:
-                    # coord_set.append(event)
-                    if event is None:
-                        print(time.time())
+                        execute_command(detected_gesture)
+                        dev.ungrab()
+                        return
                     else:
-                        if count == 2:
-                            coord_set.append(event)
-                            count = 0
-                        else:
-                            count += 1
-                    # print(event)
+                        print('clear gesture')
+                        os.system("notify-send 'Clearing gestures...'")
+                    end_time = 0
+                    timestamp_vals = {}
     except Exception as e:
         print(e)
 
