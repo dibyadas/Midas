@@ -20,37 +20,39 @@ class BaseReader:
 
         asyncio.get_event_loop().set_exception_handler(handle_exception)
 
-    def flush(self):
-    	self.waiters = []
-
     def read(self, re):
         def callback():
             loop.add_reader(self.dev.fileno(), callback)
             try:
-                # import time
-                # print(time.time(),'s')
                 res = self.dev.read_one()
-                re.event_queue.put(res)
+                # re.event_queue.put(res)
                 # saved_vals = re.event_queue.get(block=False)
-                saved_vals = res
-                try:
-                    re.pending_future.set_result(saved_vals)
-                except AttributeError: # for timeout 
-                    pass
-                except Exception as ex:
-                    re.pending_future.set_exception(ex)
+                # # saved_vals = res
+                # try:
+                #     re.pending_future.set_result(saved_vals)
+                # except AttributeError: # for timeout 
+                #     pass
+                # except Exception as ex:
+                #     try:
+                #         re.pending_future.set_exception(ex)
+                #     except asyncio.InvalidStateError:
+                #         pass
 
                 for waiter in self.waiters:
                     if waiter.pending_future:
-                        if waiter is not re:
+                        try:
+                            waiter.event_queue.put_nowait(res)
+                            sav = waiter.event_queue.get(block=False)
+                            waiter.pending_future.set_result(sav)
+                        except AttributeError: # for timeout 
+                            pass
+                        except Exception as ex:
                             try:
-                                waiter.event_queue.put_nowait(res)
-                                sav = waiter.event_queue.get(block=False)
-                                waiter.pending_future.set_result(sav)
-                            except Exception as ex:
                                 waiter.pending_future.set_exception(ex)
+                            except asyncio.InvalidStateError: # awaiting task has cancelled the future
+                                pass                          # not ideal way to handle but WIP
                     else:
-                        waiter.event_queue.put_nowait(saved_vals)
+                        waiter.event_queue.put_nowait(res)
             except Exception as e:
                 print(e)
                 # raise e from None
