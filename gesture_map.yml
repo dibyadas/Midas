@@ -15,15 +15,15 @@ command_map:
   W:
     command: 'echo W'
   M:
-    command: 'echo M'
+    command: 'notify-send M'
   I:
     command: 'echo I'
   V:
-    command: 'echo V'
+    command: 'notify-send V'
   inverted_V:
     command: 'echo inverted_V'
   L:
-    command: 'echo L'
+    command: 'notify-send L'
   mirror_L:
     command: 'echo mirror_L'
   thunder:
