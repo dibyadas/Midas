@@ -2,12 +2,14 @@ import os
 import time
 import evdev
 import asyncio
-import aiostream
+
 from evdev import ecodes, UInput
 from concurrent.futures._base import TimeoutError
+from aiostream.stream import ziplatest, merge, timeout
 
 from streams import x_movement, y_movement, tap_detector
 from utils import sanitize_and_notify, execute_command
+from device_reader import BaseReader, Reader
 
 async def detect_key_hold(device_path, hold_time_sec=0.1):
     # Assume trig_x and trig_y are True
@@ -60,69 +62,93 @@ async def detect_key_hold(device_path, hold_time_sec=0.1):
                 #     gesture_task.cancel()
                 #     gesture_task = None
 
-async def confirmation_tap(dev):
-    timeout_stream = aiostream.stream.timeout(dev.async_read_loop(), 1)
+async def confirmation_tap(base_reader):
+    # await asyncio.sleep(0.1)
+    reader = Reader(base_reader)
+    # while True:
+    #     try:
+    #         item = await asyncio.wait_for(reader.anext(), 1)
+    #         print(item)
+    #     except StopAsyncIteration:
+    #         return False, None
+    #     else:
+    #         return True, item
+    timeout_stream = timeout(reader, 1)
+    # dev = evdev.InputDevice(base_reader)
+    # timeout_stream = timeout(dev.async_read_loop(), 1)
     async with timeout_stream.stream() as timed:
         try:
             async for event in timed:
+                # print(event)
                 if event.type == ecodes.EV_KEY and event.code == 330:
                     print('confirmed.. executing')
+                    reader.exit()
                     return True, event 
         except TimeoutError:
             print("no confimation received... refreshing..")
+            reader.exit()
             return False, None
+
 
 
 async def from_streams(touchpad_path):  # Merge multiple async streams
     await asyncio.sleep(0.5)
-    dev = evdev.InputDevice(touchpad_path)
-    dev.grab()
-    try:
-        coord_set = []
-        flag = False
-        start_time = 0
-        end_time = 0
-        # async with async_merge_tap_detect.stream() as merged:
-        timestamp_vals = {}
-        async for event in dev.async_read_loop():
-            if event.type == ecodes.EV_ABS and event.code == 0:
-                try:
-                    timestamp_vals[f'{event.timestamp()}']
-                    timestamp_vals[f'{event.timestamp()}'][0] = event.value
-                except KeyError:
-                    timestamp_vals[f'{event.timestamp()}'] = [event.value, 0]
-            elif event.type == ecodes.EV_ABS and event.code == 1:
-                try:
-                    timestamp_vals[f'{event.timestamp()}']
-                    timestamp_vals[f'{event.timestamp()}'][1] = event.value
-                except KeyError:
-                    timestamp_vals[f'{event.timestamp()}'] = [0, event.value]
-            elif event.type == ecodes.EV_KEY and event.code == 330:
-                # print(event)
+    base_reader = BaseReader(touchpad_path)
+    base_reader.grab()
+    coord_set = []
+    start_time = 0
+    end_time = 0
+    count = 0
+    zip_xy = ziplatest(y_movement(base_reader),
+                       x_movement(base_reader))
+    merge_tap_xy = merge(zip_xy,
+                         tap_detector(base_reader))
+    # zip_xy = ziplatest(y_movement(touchpad_path),
+    #                    x_movement(touchpad_path))
+    # merge_tap_xy = merge(zip_xy,
+    #                      tap_detector(touchpad_path))
+
+    async with merge_tap_xy.stream() as merged:
+        async for event in merged:
+            # print(event)
+            if not isinstance(event, tuple):
                 if event.value == 1:
                     start_time = event.timestamp()
                 elif event.value == 0:
                     end_time = event.timestamp()
-                    # print(end_time, start_time, end_time - start_time)
                     if (end_time - start_time) < 0.3:
-                        timestamp_vals = {}
+                        coord_set = []
                         continue
-                    detected_gesture = sanitize_and_notify(timestamp_vals)
-                    # flagger_time = end_time
-                    tapped, event = await confirmation_tap(dev)
+                    # print(coord_set)
+                    detected_gesture = sanitize_and_notify(coord_set)
+                    print(f'Detected gesture :- {detected_gesture}')
+                        
+                    coord_set = []
+                    if detected_gesture is None:
+                        continue
+                    tapped, event = await confirmation_tap(base_reader)
                     if tapped:
-                        print('exec gesture')
-                        start_time = event.timestamp()
+                        # print('executing gesture')
                         execute_command(detected_gesture)
-                        dev.ungrab()
-                        return
                     else:
-                        print('clear gesture')
                         os.system("notify-send 'Clearing gestures...'")
-                    end_time = 0
-                    timestamp_vals = {}
-    except Exception as e:
-        print(e)
+                    # base_reader.flush()
+                        # print('cleared gesture')
+                # if event.type == ecodes.EV_KEY and event.code == 330:
+                    # print(event)
+            else:
+                coord_set.append(event)
+                # if event is None:
+                #     print(time.time())
+                # else:
+                #     if count == 2:
+                #         coord_set.append(event)
+                #         count = 0
+                #     else:
+                #         count += 1
+
+    # except Exception as e:
+    #     print(e)
 
 
 async def detect_key_tap(device_path, hold_time_sec=0.1):
