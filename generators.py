@@ -11,125 +11,150 @@ from streams import x_movement, y_movement, tap_detector
 from utils import sanitize_and_notify, execute_command
 from device_reader import BaseReader, Reader
 
-async def detect_key_hold(device_path, hold_time_sec=0.1):
-    # Assume trig_x and trig_y are True
-    # and become false when it's tapped anywhere else
+
+async def detect_key_hold(device_path, hold_time_sec=0.4):
+    '''
+    Asyncio coroutine task to detect trigger to start gesture detection
+
+    '''
     base_reader = BaseReader(device_path)
-    # dev = evdev.InputDevice(device_path)
-    # dev2.register(dev)
     reader = Reader(base_reader)
+
     gesture_task = None
-    trig_x = True
-    trig_y = True
-    area_x = 2850
-    area_y = 50
+    area_patch = True
+
+    area_x, area_y = 2850, 50
+
     state = {}
-            # for event in dev.read():
     async for event in reader:
+        # borrowed from evdev's author's comment
         if event.type == ecodes.EV_KEY:
             # When the key is pressed, record its timestamp.
             if event.code == 330 and event.value == 1:
                 state[event.code] = event.timestamp(), event
             # When it's released, remove it from the state map.
             if event.value == 0 and event.code in state:
-                # print(event)
                 del state[event.code]
-                trig_x = trig_y = True
+                area_patch = True
+
         if event.type == ecodes.EV_ABS:
             if event.code == 0:  # For ABS_X
                 if not event.value in range(area_x-100, area_x+100):
-                    trig_x = False
+                    area_patch = False
             if event.code == 1:  # For ABS_Y
                 if not event.value in range(area_y-100, area_y+100):
-                    trig_y = False
+                    area_patch = False
             # Check if any keys have been held
-            # for longer than hold_time_sec seconds.
+            # longer than hold_time_sec seconds.
         now = time.time()
         for code, ts_event in list(state.items()):
-            ts, event = ts_event
-            if (now - ts) >= hold_time_sec and trig_x and trig_y:
+            timestamp, event = ts_event
+            if (now - timestamp) >= hold_time_sec and area_patch:
                 del state[code]  # only trigger once
-                trig_y = trig_x = True
-                # yield event
-                # print(f"Triggered! Event :- {event}")
+                area_patch = True
+
                 if gesture_task is None:
                     os.system(f'notify-send "Tracking gestures..."')
-                    gesture_task = asyncio.create_task(from_streams(device_path, base_reader))
-                # await asyncio.create_task(from_streams(device_path, base_reader))
-                else:           
+                    gesture_task = asyncio.create_task(
+                        from_streams(device_path, base_reader))
+                else:
                     os.system(f'notify-send "Gesture tracking stopped"')
                     gesture_task.cancel()
                     await gesture_task
                     gesture_task = None
 
+
 async def confirmation_tap(base_reader):
-    # await asyncio.sleep(0.1)
+    '''
+    Asyncio coroutine task to wait for user's confirmation tap
+    '''
     reader = Reader(base_reader)
+
+    # Time window of 1 sec for the user to confirm by tapping
+    # or cancel & refresh if the user doesn't
     timeout_stream = timeout(reader, 1)
+
     async with timeout_stream.stream() as timed:
         try:
             async for event in timed:
-                # print(event)
+                # The first event for a tap so the user
                 if event.type == ecodes.EV_KEY and event.code == 330:
                     print('confirmed.. executing')
-                    reader.exit()
-                    return True, event 
+                    ret_val = True, event
+                    break
         except TimeoutError:
             print("no confimation received... refreshing..")
+            ret_val = False, None
+        finally:
             reader.exit()
-            return False, None
+            return ret_val
 
 
-
-async def from_streams(touchpad_path, base_reader=1):  # Merge multiple async streams
+async def from_streams(touchpad_path, base_reader=1):
+    '''
+    Asyncio coroutine task to read from all streams &
+    detect and then execute the command based on the confirmation tap
+    '''
     try:
+        # Wait for half a second before processing the events
         await asyncio.sleep(0.5)
+        # Grab the touchpad to draw gesture until this coroutine is cancelled
         base_reader.grab()
+        # Init all the readers
         x_movement_reader = Reader(base_reader)
         y_movement_reader = Reader(base_reader)
         tap_detector_reader = Reader(base_reader)
-        coord_set = []
-        start_time = 0
-        end_time = 0
-        count = 0
+
+        # Store the received coordinates
+        coordinates_set = []
+        start_time = end_time = 0
+
+        # Zip the X and Y axis events for clarity.
+        # It is processed separtely though when sanitizing the input
         zip_xy = ziplatest(y_movement(x_movement_reader),
                            x_movement(y_movement_reader))
+        # Read the tap events as well to indicate
+        # the start and end of gesture drawing
         merge_tap_xy = merge(zip_xy,
                              tap_detector(tap_detector_reader))
 
         async with merge_tap_xy.stream() as merged:
             async for event in merged:
-                # print(event)
+                # The zip_xy events are in the form of tuples
+                # while the tap events are evdev event objects
                 if not isinstance(event, tuple):
                     if event.value == 1:
                         start_time = event.timestamp()
                     elif event.value == 0:
                         end_time = event.timestamp()
+                        # If the draw is too short, ignore and reset
+                        # cause it's not meaningful
                         if (end_time - start_time) < 0.3:
-                            coord_set = []
+                            coordinates_set = []
                             continue
-                        # print(coord_set)
-                        detected_gesture = sanitize_and_notify(coord_set)
+
+                        detected_gesture = sanitize_and_notify(coordinates_set)
                         print(f'Detected gesture :- {detected_gesture}')
-                            
-                        coord_set = []
+
+                        coordinates_set = []
                         if detected_gesture is None:
                             continue
+                        # If gesture detected then wait for a confirmation tap
                         tapped, event = await confirmation_tap(base_reader)
                         if tapped:
                             os.system(f"notify-send 'Confirmed... Executing - {detected_gesture}'")
                             execute_command(detected_gesture)
                         else:
                             os.system("notify-send 'Clearing gestures...'")
-
                 else:
-                    coord_set.append(event)
-
+                    coordinates_set.append(event)
 
     except asyncio.CancelledError:
+        # Exit all readers from the base_reader once they are done
         x_movement_reader.exit()
         y_movement_reader.exit()
         tap_detector_reader.exit()
+        # Ungrab and yield touchpad to the user
         base_reader.ungrab()
 
 

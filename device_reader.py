@@ -44,7 +44,8 @@ class BaseReader:
                             waiter.event_queue.put_nowait(res)
                             sav = waiter.event_queue.get(block=False)
                             waiter.pending_future.set_result(sav)
-                        except AttributeError: # for timeout 
+                        except AttributeError: 
+                            # for timeout when the pending future is set None
                             pass
                         except Exception as ex:
                             try:
