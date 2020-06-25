@@ -3,7 +3,8 @@ import moosegesture
 import yaml
 # moosegesture._MIN_STROKE_LEN = 100
 
-with open('gesture_map.yml','r') as f:
+gesture_command_map_file = 'gesture_map.yml'
+with open(gesture_command_map_file,'r') as f:
     map_config = yaml.full_load(f)
 
 gesture_map = map_config['gesture_map']
@@ -16,9 +17,12 @@ def execute_command(gesture):
 
 def sanitize_and_notify(coord_set):
     timestamp_vals = {}
+    # filter all X axis events and set their timestamps
     for _, x_event in coord_set:
         if x_event is not None:
             timestamp_vals[f'{x_event.timestamp()}'] = [x_event.value]
+
+    # filter all Y axis events and set their timestamps
     for y_event, _ in coord_set:
         try:
             if y_event is not None:
@@ -30,13 +34,10 @@ def sanitize_and_notify(coord_set):
             pass
 
     sanitized_tuple_list = []
-    count = 0
     for item in timestamp_vals.values():
-        count += 1
         if len(item) == 2:
             sanitized_tuple_list.append(tuple(item))
-            count = 0
-
+    # ignore the first 10% events cause it's garbage sometimes
     trim_beginning_len = 0.1*len(sanitized_tuple_list)
     
     detected_gesture = moosegesture.getGesture(sanitized_tuple_list[int(trim_beginning_len):])
