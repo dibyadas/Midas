@@ -7,9 +7,9 @@ from evdev import ecodes, UInput
 from concurrent.futures._base import TimeoutError
 from aiostream.stream import ziplatest, merge, timeout
 
-from streams import x_movement, y_movement, tap_detector
-from utils import sanitize_and_notify, execute_command
 from device_reader import BaseReader, Reader
+from utils import sanitize_and_notify, execute_command
+from streams import x_movement, y_movement, tap_detector
 
 
 async def detect_key_hold(device_path, hold_time_sec=0.4):
@@ -159,37 +159,36 @@ async def from_streams(touchpad_path, base_reader=1):
 
 
 async def detect_key_tap(device_path, hold_time_sec=0.1):
-    dev = evdev.InputDevice(device_path)
+    # dev = evdev.InputDevice(device_path)
+    base_reader = BaseReader(device_path)
+    reader = Reader(base_reader)
+
     keymap = [[1, 2, 3, ecodes.KEY_BACKSPACE], [
         4, 5, 6, 0], [7, 8, 9, ecodes.KEY_ENTER]]
     x_locs = []
     y_locs = []
     state = {}
-    while True:
-        try:
-            for event in dev.read():
-                if event.type == ecodes.EV_KEY:
-                    if event.code == 330 and event.value == 1:
-                        x_locs = []
-                        y_locs = []
-                        state[event.code] = event.timestamp(), event
-                    if event.value == 0 and event.code in state:
-                        del state[event.code]
-                        x_locs = []
-                        y_locs = []
-                if event.type == ecodes.EV_ABS:
-                    if event.code == 0:
-                        x_locs.append(event.value)
-                    if event.code == 1:
-                        y_locs.append(event.value)
-        except BlockingIOError:
-            # If nothing to read then suspend the coroutine
-            # for some time to allow the other coroutine to run
-            await asyncio.sleep(0.05)
+
+    async for event in reader:
+        if event.type == ecodes.EV_KEY:
+            if event.code == 330 and event.value == 1:
+                x_locs = []
+                y_locs = []
+                state[event.code] = event.timestamp(), event
+            if event.value == 0 and event.code in state:
+                del state[event.code]
+                x_locs = []
+                y_locs = []
+        if event.type == ecodes.EV_ABS:
+            if event.code == 0:
+                x_locs.append(event.value)
+            if event.code == 1:
+                y_locs.append(event.value)
+
         now = time.time()
         for code, ts_event in list(state.items()):
-            ts, event = ts_event
-            if (now - ts) >= hold_time_sec:
+            timestamp, event = ts_event
+            if (now - timestamp) >= hold_time_sec:
                 del state[code]  # only trigger once
                 try:
                     avg_x = sum(x_locs)/len(x_locs)
