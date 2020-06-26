@@ -4,16 +4,29 @@ import yaml
 # moosegesture._MIN_STROKE_LEN = 100
 
 gesture_command_map_file = 'gesture_map.yml'
-with open(gesture_command_map_file,'r') as f:
-    map_config = yaml.full_load(f)
 
-gesture_map = map_config['gesture_map']
-command_map = map_config['command_map']
 
-tuple_gesture_keys = [eval(gesture) for gesture in gesture_map.keys()]
+gesture_map = None
+command_map = None
+tuple_gesture_keys = None
+
+
+def reload_config():
+    with open(gesture_command_map_file, 'r') as f:
+        map_config = yaml.full_load(f)
+
+    global gesture_map, command_map, tuple_gesture_keys
+    gesture_map = map_config['gesture_map']
+    command_map = map_config['command_map']
+    tuple_gesture_keys = [eval(gesture) for gesture in gesture_map.keys()]
+
+
+reload_config()
+
 
 def execute_command(gesture):
     os.system(f"{command_map[gesture]['command']} &")
+
 
 def sanitize_and_notify(coord_set):
     timestamp_vals = {}
@@ -39,12 +52,13 @@ def sanitize_and_notify(coord_set):
             sanitized_tuple_list.append(tuple(item))
     # ignore the first 10% events cause it's garbage sometimes
     trim_beginning_len = 0.1*len(sanitized_tuple_list)
-    
-    detected_gesture = moosegesture.getGesture(sanitized_tuple_list[int(trim_beginning_len):])
+
+    detected_gesture = moosegesture.getGesture(
+        sanitized_tuple_list[int(trim_beginning_len):])
     # print(f'Gesture is :- {detected_gesture}')
     closest_match = moosegesture.findClosestMatchingGesture(
         detected_gesture, tuple_gesture_keys, maxDifference=4)
-    
+
     if closest_match is None:
         return None
     os.system(f"notify-send 'Gesture Detected :- {gesture_map[str(closest_match[0])]}'")

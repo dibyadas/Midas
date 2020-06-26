@@ -8,7 +8,7 @@ from concurrent.futures._base import TimeoutError
 from aiostream.stream import ziplatest, merge, timeout
 
 from device_reader import BaseReader, Reader
-from utils import sanitize_and_notify, execute_command
+from utils import sanitize_and_notify, execute_command, reload_config
 from streams import x_movement, y_movement, tap_detector
 
 
@@ -105,6 +105,9 @@ async def from_streams(touchpad_path, base_reader=1):
         y_movement_reader = Reader(base_reader)
         tap_detector_reader = Reader(base_reader)
 
+        # Reload gesture command map
+        reload_config()
+
         # Store the received coordinates
         coordinates_set = []
         start_time = end_time = 0
@@ -141,6 +144,7 @@ async def from_streams(touchpad_path, base_reader=1):
                             continue
                         # If gesture detected then wait for a confirmation tap
                         tapped, event = await confirmation_tap(base_reader)
+
                         if tapped:
                             os.system(f"notify-send 'Confirmed... Executing - {detected_gesture}'")
                             execute_command(detected_gesture)
