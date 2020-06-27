@@ -1,9 +1,7 @@
-import os
+import subprocess
 import moosegesture
 import yaml
 # moosegesture._MIN_STROKE_LEN = 100
-
-gesture_command_map_file = 'gesture_map.yml'
 
 
 gesture_map = None
@@ -11,7 +9,7 @@ command_map = None
 tuple_gesture_keys = None
 
 
-def reload_config():
+def reload_config(gesture_command_map_file='gesture_map.yml'):
     with open(gesture_command_map_file, 'r') as f:
         map_config = yaml.full_load(f)
 
@@ -21,11 +19,8 @@ def reload_config():
     tuple_gesture_keys = [eval(gesture) for gesture in gesture_map.keys()]
 
 
-reload_config()
-
-
 def execute_command(gesture):
-    os.system(f"{command_map[gesture]['command']} &")
+    subprocess.Popen([command_map[gesture]['command']], shell=True)
 
 
 def sanitize_and_notify(coord_set):
@@ -61,5 +56,9 @@ def sanitize_and_notify(coord_set):
 
     if closest_match is None:
         return None
-    os.system(f"notify-send 'Gesture Detected :- {gesture_map[str(closest_match[0])]}'")
+    notify(f"Gesture Detected :- {gesture_map[str(closest_match[0])]}")
     return gesture_map[str(closest_match[0])]
+
+
+def notify(notif_text):
+    subprocess.Popen(['notify-send','Midas',notif_text])

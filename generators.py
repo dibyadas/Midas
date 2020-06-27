@@ -8,8 +8,8 @@ from concurrent.futures._base import TimeoutError
 from aiostream.stream import ziplatest, merge, timeout
 
 from device_reader import BaseReader, Reader
-from utils import sanitize_and_notify, execute_command, reload_config
 from streams import x_movement, y_movement, tap_detector
+from utils import sanitize_and_notify, execute_command, reload_config, notify
 
 
 async def detect_key_hold(device_path, hold_time_sec=0.4):
@@ -37,6 +37,8 @@ async def detect_key_hold(device_path, hold_time_sec=0.4):
                 del state[event.code]
                 area_patch = True
 
+        # Define a square patch of 200x200 around the top right corner
+        # where the tap has to be detected
         if event.type == ecodes.EV_ABS:
             if event.code == 0:  # For ABS_X
                 if not event.value in range(area_x-100, area_x+100):
@@ -54,11 +56,11 @@ async def detect_key_hold(device_path, hold_time_sec=0.4):
                 area_patch = True
 
                 if gesture_task is None:
-                    os.system(f'notify-send "Tracking gestures..."')
+                    notify("Tracking gestures...")
                     gesture_task = asyncio.create_task(
                         from_streams(device_path, base_reader))
                 else:
-                    os.system(f'notify-send "Gesture tracking stopped"')
+                    notify("Gesture tracking stopped")
                     gesture_task.cancel()
                     await gesture_task
                     gesture_task = None
@@ -137,7 +139,7 @@ async def from_streams(touchpad_path, base_reader=1):
                             continue
 
                         detected_gesture = sanitize_and_notify(coordinates_set)
-                        print(f'Detected gesture :- {detected_gesture}')
+                        # print(f'Detected gesture :- {detected_gesture}')
 
                         coordinates_set = []
                         if detected_gesture is None:
@@ -146,10 +148,10 @@ async def from_streams(touchpad_path, base_reader=1):
                         tapped, event = await confirmation_tap(base_reader)
 
                         if tapped:
-                            os.system(f"notify-send 'Confirmed... Executing - {detected_gesture}'")
+                            notify(f"Confirmed... Executing - {detected_gesture}")
                             execute_command(detected_gesture)
                         else:
-                            os.system("notify-send 'Clearing gestures...'")
+                            notify("Clearing gestures...")
                 else:
                     coordinates_set.append(event)
 

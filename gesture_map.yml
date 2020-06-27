@@ -1,6 +1,7 @@
 gesture_map:
   ('DR', 'UR', 'DR', 'UR'): 'W'
   ('UR', 'DR', 'UR', 'DR'): 'M'
+  ('U', 'DR', 'U'): 'N'
   ('D',): 'I'
   ('DR', 'UR'): 'V'
   ('UR', 'DR'): 'inverted_V'
@@ -8,7 +9,7 @@ gesture_map:
   ('D', 'R'): 'L'
   ('UR', 'D', 'UR'): 'thunder'
   ('D', 'L'): 'mirror_L'
-  ('DL', 'DR'): '<'
+  ('DL', 'DR'): '<' 
   ('DR', 'DL'): '>'
 
 command_map:
@@ -16,6 +17,8 @@ command_map:
     command: 'echo W'
   M:
     command: '/home/dibya/Programs/f69/firefox/firefox'
+  N:
+    command: 'notify-send N'
   I:
     command: 'echo I'
   V:
@@ -25,32 +28,12 @@ command_map:
   L:
     command: 'xfce4-terminal'
   mirror_L:
-    command: 'echo mirror_L'
+    command: 'thunar ~'
   thunder:
-    command: 'echo thunder'
+    command: 'cd /home/dibya/extra/scrcpy; docker-compose run --rm scrcpy'
   C:
     command: 'echo C'
   '<':
-    command: 'echo "<"'
+    command: './p.sh'
   '>':
     command: 'echo ">"'
-
-# command_map:
-#   W:
-#     command: 'echo W'
-#   M:
-#     command: '/home/dibya/Programs/f69/firefox/firefox'
-#   I:
-#     command: 'echo I'
-#   V:
-#     command: 'echo V'
-#   inverted_V:
-#     command: 'echo inverted_V'
-#   L:
-#     command: 'echo L'
-#   mirror_L:
-#     command: 'echo mirror_L'
-#   thunder:
-#     command: 'echo thunder'
-#   C:
-#     command: 'echo C'
