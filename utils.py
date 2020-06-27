@@ -1,6 +1,6 @@
+import yaml
 import subprocess
 import moosegesture
-import yaml
 # moosegesture._MIN_STROKE_LEN = 100
 
 
@@ -61,4 +61,4 @@ def sanitize_and_notify(coord_set):
 
 
 def notify(notif_text):
-    subprocess.Popen(['notify-send','Midas',notif_text])
+    subprocess.Popen(['notify-send', 'Midas', notif_text])

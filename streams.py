@@ -1,6 +1,7 @@
-from evdev import ecodes
-from device_reader import Reader
 import evdev
+from evdev import ecodes
+
+from device_reader import Reader
 
 
 async def x_movement(reader):  # filter events in X axis
