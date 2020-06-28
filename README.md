@@ -12,14 +12,18 @@ Here's what it might look like :
 gesture_map:
     ('DR', 'UR'): 'V'
     ('UR', 'DR'): 'inverted_V'
+    ('UR', 'DR', 'UR', 'DR'): 'M'
 command_map:
     V:
       command: 'xfce4-terminal'
     inverted_V:
       command: 'googlechrome'
+    M:
+      command: './myscript.sh'
 ```
 
 The above file is reloaded every time the gesture detection is triggered so no need to worry about re-starting the process. Here's a GIF showing how it works.
+<h3 align="center"><img src="midas.gif"></h3>
 
 #### Installation:
 Ideally, it should be running as a startup script in the background. You can set in your DE or install it as systemd service for more robust control. 
