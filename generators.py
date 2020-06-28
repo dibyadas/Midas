@@ -10,60 +10,61 @@ from device_reader import BaseReader, Reader
 from streams import x_movement, y_movement, tap_detector
 from utils import sanitize_and_notify, execute_command, reload_config, notify
 
-
+from pad import pad
 async def detect_key_hold(device_path, hold_time_sec=0.4):
     '''
     Asyncio coroutine task to detect trigger to start gesture detection
 
     '''
-    base_reader = BaseReader(device_path)
-    reader = Reader(base_reader)
+    try:
+        base_reader = BaseReader(device_path)
+        reader = Reader(base_reader)
+        gesture_task = None
+        area_patch = True
 
-    gesture_task = None
-    area_patch = True
+        area_x, area_y = 2850, 50
 
-    area_x, area_y = 2850, 50
+        state = {}
+        async for event in reader:
+            # borrowed from evdev's author's comment
+            if event.type == ecodes.EV_KEY:
+                # When the key is pressed, record its timestamp.
+                if event.code == 330 and event.value == 1:
+                    state[event.code] = event.timestamp(), event
+                # When it's released, remove it from the state map.
+                if event.value == 0 and event.code in state:
+                    del state[event.code]
+                    area_patch = True
 
-    state = {}
-    async for event in reader:
-        # borrowed from evdev's author's comment
-        if event.type == ecodes.EV_KEY:
-            # When the key is pressed, record its timestamp.
-            if event.code == 330 and event.value == 1:
-                state[event.code] = event.timestamp(), event
-            # When it's released, remove it from the state map.
-            if event.value == 0 and event.code in state:
-                del state[event.code]
-                area_patch = True
+            # Define a square patch of 200x200 around the top right corner
+            # where the tap has to be detected
+            if event.type == ecodes.EV_ABS:
+                if event.code == 0:  # For ABS_X
+                    if not event.value in range(area_x-100, area_x+100):
+                        area_patch = False
+                if event.code == 1:  # For ABS_Y
+                    if not event.value in range(area_y-100, area_y+100):
+                        area_patch = False
+                # Check if any keys have been held
+                # longer than hold_time_sec seconds.
+            now = time.time()
+            for code, ts_event in list(state.items()):
+                timestamp, event = ts_event
+                if (now - timestamp) >= hold_time_sec and area_patch:
+                    del state[code]  # only trigger once
+                    area_patch = True
 
-        # Define a square patch of 200x200 around the top right corner
-        # where the tap has to be detected
-        if event.type == ecodes.EV_ABS:
-            if event.code == 0:  # For ABS_X
-                if not event.value in range(area_x-100, area_x+100):
-                    area_patch = False
-            if event.code == 1:  # For ABS_Y
-                if not event.value in range(area_y-100, area_y+100):
-                    area_patch = False
-            # Check if any keys have been held
-            # longer than hold_time_sec seconds.
-        now = time.time()
-        for code, ts_event in list(state.items()):
-            timestamp, event = ts_event
-            if (now - timestamp) >= hold_time_sec and area_patch:
-                del state[code]  # only trigger once
-                area_patch = True
-
-                if gesture_task is None:
-                    notify("Tracking gestures...")
-                    gesture_task = asyncio.create_task(
-                        from_streams(device_path, base_reader))
-                else:
-                    notify("Gesture tracking stopped")
-                    gesture_task.cancel()
-                    await gesture_task
-                    gesture_task = None
-
+                    if gesture_task is None:
+                        notify("Tracking gestures...")
+                        gesture_task = asyncio.create_task(
+                            from_streams(base_reader))
+                    else:
+                        notify("Gesture tracking stopped")
+                        gesture_task.cancel()
+                        await gesture_task
+                        gesture_task = None
+    except  asyncio.CancelledError:
+        reader.exit()
 
 async def confirmation_tap(base_reader):
     '''
@@ -78,20 +79,21 @@ async def confirmation_tap(base_reader):
     async with timeout_stream.stream() as timed:
         try:
             async for event in timed:
-                # The first event for a tap so the user
+                # The first tap event received before timeout indicates
+                # the user confirms the detected gesture
                 if event.type == ecodes.EV_KEY and event.code == 330:
-                    print('confirmed.. executing')
+                    # print('confirmed.. executing')
                     ret_val = True, event
                     break
         except TimeoutError:
-            print("no confimation received... refreshing..")
+            # print("no confimation received... refreshing..")
             ret_val = False, None
         finally:
             reader.exit()
             return ret_val
 
 
-async def from_streams(touchpad_path, base_reader=1):
+async def from_streams(base_reader):
     '''
     Asyncio coroutine task to read from all streams &
     detect and then execute the command based on the confirmation tap
@@ -147,10 +149,10 @@ async def from_streams(touchpad_path, base_reader=1):
                         tapped, event = await confirmation_tap(base_reader)
 
                         if tapped:
-                            notify(f"Confirmed... Executing - {detected_gesture}")
+                            notify(f"Confirmed. Running- {detected_gesture}")
                             execute_command(detected_gesture)
                         else:
-                            notify("Clearing gestures...")
+                            notify("Clearing gestures")
                 else:
                     coordinates_set.append(event)
 
