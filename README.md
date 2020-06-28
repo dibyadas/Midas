@@ -10,13 +10,13 @@ Here's what it might look like :
 
 ```yaml
 gesture_map:
-	('DR', 'UR'): 'V'
-  	('UR', 'DR'): 'inverted_V'
+    ('DR', 'UR'): 'V'
+    ('UR', 'DR'): 'inverted_V'
 command_map:
-	V:
-	  command: 'xfce4-terminal'
-	inverted_V:
-	  command: 'googlechrome'
+    V:
+      command: 'xfce4-terminal'
+    inverted_V:
+      command: 'googlechrome'
 ```
 
 The above file is reloaded every time the gesture detection is triggered so no need to worry about re-starting the process. Here's a GIF showing how it works.
