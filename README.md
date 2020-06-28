@@ -31,4 +31,5 @@ Ideally, it should be running as a startup script in the background. You can set
 The code needs more documentation and refactoring and is open for PRs and issues. Cheers :beers: !
 ##### Footnote:
 
-I wrote this as an exercise while learning about the asyncio library and thus it is extensively used in this. It is single threaded has a low memory footprint. Since I am not an expert in async programs there might be many bugs in this so please let me know by creating an issue that you find. 
+I wrote this as an exercise while learning about the asyncio library and thus it is extensively used in this. It is single threaded has a low memory footprint. The code can be improved in many places as I am still learning the nuances of async programming in Python and this started merely as a test to implement the async 
+concepts that I was learning. Please let me know any suggestions or bugs found.
