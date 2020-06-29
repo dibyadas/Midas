@@ -1,4 +1,3 @@
-import evdev
 from evdev import ecodes
 
 from device_reader import Reader
