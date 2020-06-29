@@ -161,7 +161,7 @@ async def from_streams(base_reader):
         x_movement_reader.exit()
         y_movement_reader.exit()
         tap_detector_reader.exit()
-        # Ungrab and yield touchpad to the user
+        # Ungrab and yield control of touchpad to the user
         base_reader.ungrab()
 
 
