@@ -61,4 +61,4 @@ def sanitize_and_notify(coord_set):
 
 
 def notify(notif_text):
-    subprocess.Popen(['notify-send', 'Midas', f'"{notif_text}"'])
+    subprocess.Popen(['notify-send', 'Midas', notif_text])
