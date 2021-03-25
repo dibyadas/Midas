@@ -1,4 +1,4 @@
 aiostream==0.4.1
 evdev==1.3.0
 MooseGesture==1.0.2
-PyYAML==5.3.1
+PyYAML==5.4
